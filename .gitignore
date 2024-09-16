@@ -1,4 +1,5 @@
 # vi: ft=gitignore
+/gradle-pretty
 
 # General
 **/bin/**
