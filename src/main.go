@@ -39,12 +39,7 @@ func main() {
             fmt.Fprintf(os.Stderr, "Example:\n")
             fmt.Fprintf(os.Stderr, "  ./gradlew build 2>&1 | %s\n", os.Args[0])
     }
-    verbose := flag.Bool("v", false, "Verbose output")
     flag.Parse()
-
-    if *verbose {
-        println("Starting...")
-    }
 
     cwd, err := os.Getwd()
     if err != nil {

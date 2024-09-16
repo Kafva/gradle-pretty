@@ -1,6 +1,6 @@
 # gradle-pretty
 Formatter to make gradle build output readable, inspired by
-[xcpretty](https://github.com/xcpretty/xcpretty). 
+[xcpretty](https://github.com/xcpretty/xcpretty).
 
 ```bash
 # Build and install
