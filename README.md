@@ -1,12 +1,11 @@
 # gradle-pretty
 Formatter to make gradle build output readable, inspired by
-[xcpretty](https://github.com/xcpretty/xcpretty).
+[xcpretty](https://github.com/xcpretty/xcpretty). The default build log is too
+noisy, it is a pain to find the actual errors in the output. With
+`gradle-pretty` we only show the current task and source code errors on
+failure, no more, no less.
 
 ```bash
-# Build and install
-go build -o gradle-pretty ./src
-install gradle-pretty ~/.local/bin/gradle-pretty
-
-# Use with gradle build
+go install github.com/Kafva/gradle-pretty@latest
 ./gradlew build 2>&1 | gradle-pretty
 ```

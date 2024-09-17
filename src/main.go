@@ -12,7 +12,7 @@ import (
 
 type GradleTask struct {
     Name string
-    Result string
+    Failed bool
 }
 
 type GradleError struct {
@@ -20,59 +20,66 @@ type GradleError struct {
     Desc string
 }
 
+func die(fmtStr string, args... any) {
+    fmt.Printf(fmtStr, args ...)
+    os.Exit(1)
+}
+
 func taskLog(task GradleTask, width int) {
     var result string
-    if task.Result == "FAILED" {
-        result = " \033[31mFAILED\033[0m"
+    if task.Failed {
+        result = " \033[91m\033[0m"
     } else {
         result = ""
     }
-    msg := fmt.Sprintf("\r\033[33m▸\033[0m %s%s", task.Name, result)
+    msg := fmt.Sprintf("\r\033[93m▸\033[0m %s%s", task.Name, result)
     spaces := strings.Repeat(" ", width - len(msg))
     print(msg + spaces) // No newline
 }
 
-func main() {
-    flag.Usage = func() {
-            fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
-            flag.PrintDefaults()
-            fmt.Fprintf(os.Stderr, "Example:\n")
-            fmt.Fprintf(os.Stderr, "  ./gradlew build 2>&1 | %s\n", os.Args[0])
+func parseBuildLog(noLogfile bool, logfile string) (
+    tasks []GradleTask,
+    errors []GradleError,
+    timeTaken int64) {
+    var f *os.File
+    var err error
+    if !noLogfile {
+        f, err = os.OpenFile(logfile,
+                             os.O_TRUNC | os.O_CREATE | os.O_WRONLY, 0644)
+        if err != nil {
+            die("Error opening %s: %s\n", logfile, err)
+        }
+        defer f.Close()
     }
-    flag.Parse()
-
     cwd, err := os.Getwd()
     if err != nil {
-        fmt.Printf("Error reading current working directory: %s", err)
-        os.Exit(1)
+        die("Error reading current working directory: %s\n", err)
     }
     cwd = "file://" + cwd + "/"
-    termWidth, _, err := term.GetSize(1)
+    termWidth, _, err := term.GetSize(int(os.Stdout.Fd()))
     if err != nil {
-        fmt.Printf("Error reading terminal size: %s", err)
-        os.Exit(1)
+        die("Error reading terminal size: %s\n", err)
     }
-
-    var tasks []GradleTask
-    var errors []GradleError
 
     scanner := bufio.NewScanner(os.Stdin)
 
+    startTime := time.Now().Unix()
     for scanner.Scan() {
-        line := strings.TrimSpace(scanner.Text())
+        rawline := scanner.Text()
+        line := strings.TrimSpace(rawline)
 
         if strings.HasPrefix(line, "> Task") {
             spl := strings.Split(line, " ")
             if len(spl) < 4 {
                 continue
             }
-            task := GradleTask { spl[2], spl[3] }
+            task := GradleTask { spl[2], spl[3] == "FAILED" }
             tasks = append(tasks, task)
 
             taskLog(task, termWidth)
-            time.Sleep(200 * time.Millisecond)
 
         } else if strings.HasPrefix(line, "e:") {
+            // Source code errors have an 'e:' prefix
             spl := strings.Split(line, " ")
             if len(spl) < 2 {
                 continue
@@ -81,17 +88,49 @@ func main() {
             desc := strings.Join(spl[2:], " ")
             err := GradleError { location, desc }
             errors = append(errors, err)
+
+        }
+
+        if !noLogfile {
+            f.WriteString(rawline + "\n")
         }
     }
+    endTime := time.Now().Unix()
+    timeTaken = endTime - startTime
     println()
 
-    // Dump errors if at least one task failed
-    for _,task := range tasks {
-        if task.Result == "FAILED" {
-            for _,err := range errors {
-                fmt.Printf("%s: %s\n", err.Location, err.Desc)
-            }
-            break
-        }
+    return tasks, errors, timeTaken
+}
+
+func main() {
+    flag.Usage = func() {
+        fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
+        flag.PrintDefaults()
+        fmt.Fprintf(os.Stderr, "EXAMPLE:\n")
+        fmt.Fprintf(os.Stderr, "  ./gradlew build 2>&1 | %s\n", os.Args[0])
     }
+    noLogfile := flag.Bool("N", false, "Do not save a copy of the complete build log")
+    logfile := flag.String("l", "build.log", "Path to save complete build log in")
+    flag.Parse()
+
+    tasks, errors, timeTaken := parseBuildLog(*noLogfile, *logfile)
+
+    for _,task := range tasks {
+        if !task.Failed {
+            continue
+        }
+
+        // Dump errors if at least one task failed
+        for _,err := range errors {
+            fmt.Printf("%s: %s\n", err.Location, err.Desc)
+        }
+
+        fmt.Printf("\033[91mBUILD FAILED\033[0m in %ds\n", timeTaken)
+        if ! *noLogfile {
+            fmt.Printf("See %s for more information\n", *logfile)
+        }
+        os.Exit(1)
+    }
+
+    fmt.Printf("\033[92mBUILD SUCCESSFUL\033[0m in %ds\n", timeTaken)
 }
