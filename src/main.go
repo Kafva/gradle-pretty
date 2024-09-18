@@ -1,13 +1,16 @@
 package main
 
 import (
-    "bufio"
-    "flag"
-    "fmt"
-    "os"
-    "strings"
-    "time"
-    "golang.org/x/term"
+	"bufio"
+	"flag"
+	"fmt"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
+
+	"golang.org/x/term"
 )
 
 type GradleTask struct {
@@ -23,6 +26,14 @@ type GradleError struct {
 func die(fmtStr string, args... any) {
     fmt.Printf(fmtStr, args ...)
     os.Exit(1)
+}
+
+func hideCursor() {
+    print("\x1b[?25l")
+}
+
+func showCursor() {
+    print("\x1b[?25h")
 }
 
 func taskLog(task GradleTask, width int) {
@@ -60,6 +71,17 @@ func parseBuildLog(noLogfile bool, logfile string) (
     if err != nil {
         die("Error reading terminal size: %s\n", err)
     }
+
+    // Setup signal handler to restore cursor visibility on ^C
+    signalChannel := make(chan os.Signal, 1)
+    signal.Notify(signalChannel, os.Interrupt, syscall.SIGINT)
+
+    hideCursor()
+    go func() {
+        <- signalChannel  // Wait for signal...
+        showCursor()
+        os.Exit(2)
+    }()
 
     scanner := bufio.NewScanner(os.Stdin)
 
@@ -99,18 +121,23 @@ func parseBuildLog(noLogfile bool, logfile string) (
     timeTaken = endTime - startTime
     println()
 
+    // Show cursor again and drop signal handler
+    showCursor()
+    signal.Stop(signalChannel)
+
     return tasks, errors, timeTaken
 }
 
 func main() {
     flag.Usage = func() {
-        fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
-        flag.PrintDefaults()
-        fmt.Fprintf(os.Stderr, "EXAMPLE:\n")
+        fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS]\n\n", os.Args[0])
+        fmt.Fprintf(os.Stderr, "Prettify the gradle build log:\n")
         fmt.Fprintf(os.Stderr, "  ./gradlew build 2>&1 | %s\n", os.Args[0])
+        fmt.Fprintf(os.Stderr, "\nOPTIONS:\n")
+        flag.PrintDefaults()
     }
-    noLogfile := flag.Bool("N", false, "Do not save a copy of the complete build log")
     logfile := flag.String("l", "build.log", "Path to save complete build log in")
+    noLogfile := flag.Bool("N", false, "Do not save a copy of the complete build log")
     flag.Parse()
 
     tasks, errors, timeTaken := parseBuildLog(*noLogfile, *logfile)
@@ -133,4 +160,5 @@ func main() {
     }
 
     fmt.Printf("\033[92mBUILD SUCCESSFUL\033[0m in %ds\n", timeTaken)
+    os.Exit(0)
 }
