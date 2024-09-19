@@ -36,6 +36,20 @@ func taskLog(task GradleTask) {
     println(msg)        // Print with newline
 }
 
+func buildOk(tasks []GradleTask) bool {
+    if len(tasks) == 0 {
+        return false
+    }
+
+    for _,task := range tasks {
+        if task.Failed {
+            return false
+        }
+    }
+
+    return true
+}
+
 func parseBuildLog(noLogfile bool, logfile string) (
     tasks []GradleTask,
     errors []GradleError,
@@ -114,23 +128,22 @@ func main() {
 
     tasks, errors, timeTaken := parseBuildLog(*noLogfile, *logfile)
 
-    for _,task := range tasks {
-        if !task.Failed {
-            continue
-        }
+    if buildOk(tasks) {
+        fmt.Printf("\033[92mBUILD SUCCESSFUL\033[0m in %ds\n", timeTaken)
+        os.Exit(0)
 
-        // Dump errors if at least one task failed
+    } else {
         for _,err := range errors {
             fmt.Printf("%s: %s\n", err.Location, err.Desc)
         }
 
         fmt.Printf("\033[91mBUILD FAILED\033[0m in %ds\n", timeTaken)
+        if len(tasks) == 0 {
+            println("No tasks completed")
+        }
         if ! *noLogfile {
             fmt.Printf("See %s for more information\n", *logfile)
         }
         os.Exit(1)
     }
-
-    fmt.Printf("\033[92mBUILD SUCCESSFUL\033[0m in %ds\n", timeTaken)
-    os.Exit(0)
 }
