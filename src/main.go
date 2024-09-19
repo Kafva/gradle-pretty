@@ -1,16 +1,16 @@
 package main
 
 import (
-	"bufio"
-	"flag"
-	"fmt"
-	"os"
-	"os/signal"
-	"strings"
-	"syscall"
-	"time"
+    "bufio"
+    "flag"
+    "fmt"
+    "os"
+    "os/signal"
+    "strings"
+    "syscall"
+    "time"
 
-	"golang.org/x/term"
+    "golang.org/x/term"
 )
 
 type GradleTask struct {
@@ -72,15 +72,20 @@ func parseBuildLog(noLogfile bool, logfile string) (
         die("Error reading terminal size: %s\n", err)
     }
 
-    // Setup signal handler to restore cursor visibility on ^C
+    // Setup signal handler to restore cursor visibility when cancelled or
+    // terminated via e.g. pkill
     signalChannel := make(chan os.Signal, 1)
-    signal.Notify(signalChannel, os.Interrupt, syscall.SIGINT)
+    signal.Notify(signalChannel, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
     hideCursor()
     go func() {
-        <- signalChannel  // Wait for signal...
+        sig := <- signalChannel  // Wait for signal...
         showCursor()
-        os.Exit(2)
+        if sig == syscall.SIGINT {
+            os.Exit(2)
+        } else {
+            os.Exit(1)
+        }
     }()
 
     scanner := bufio.NewScanner(os.Stdin)
@@ -97,7 +102,6 @@ func parseBuildLog(noLogfile bool, logfile string) (
             }
             task := GradleTask { spl[2], spl[3] == "FAILED" }
             tasks = append(tasks, task)
-
             taskLog(task, termWidth)
 
         } else if strings.HasPrefix(line, "e:") {
