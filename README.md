@@ -6,6 +6,6 @@ noisy, it is a pain to find the actual errors in the output. With
 failure, no more, no less.
 
 ```bash
-go install github.com/Kafva/gradle-pretty@latest
+go install github.com/Kafva/gradle-pretty
 ./gradlew build 2>&1 | gradle-pretty
 ```
