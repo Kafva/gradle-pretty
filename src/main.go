@@ -5,12 +5,8 @@ import (
     "flag"
     "fmt"
     "os"
-    "os/signal"
     "strings"
-    "syscall"
     "time"
-
-    "golang.org/x/term"
 )
 
 type GradleTask struct {
@@ -28,24 +24,16 @@ func die(fmtStr string, args... any) {
     os.Exit(1)
 }
 
-func hideCursor() {
-    print("\x1b[?25l")
-}
-
-func showCursor() {
-    print("\x1b[?25h")
-}
-
-func taskLog(task GradleTask, width int) {
+func taskLog(task GradleTask) {
     var result string
     if task.Failed {
         result = " \033[91m\033[0m"
     } else {
         result = ""
     }
-    msg := fmt.Sprintf("\r\033[93m▸\033[0m %s%s", task.Name, result)
-    spaces := strings.Repeat(" ", width - len(msg))
-    print(msg + spaces) // No newline
+    msg := fmt.Sprintf("\033[93m▸\033[0m %s%s", task.Name, result)
+    print("\r\033[2K")  // Clear line
+    println(msg)        // Print with newline
 }
 
 func parseBuildLog(noLogfile bool, logfile string) (
@@ -67,26 +55,6 @@ func parseBuildLog(noLogfile bool, logfile string) (
         die("Error reading current working directory: %s\n", err)
     }
     cwd = "file://" + cwd + "/"
-    termWidth, _, err := term.GetSize(int(os.Stdout.Fd()))
-    if err != nil {
-        die("Error reading terminal size: %s\n", err)
-    }
-
-    // Setup signal handler to restore cursor visibility when cancelled or
-    // terminated via e.g. pkill
-    signalChannel := make(chan os.Signal, 1)
-    signal.Notify(signalChannel, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-
-    hideCursor()
-    go func() {
-        sig := <- signalChannel  // Wait for signal...
-        showCursor()
-        if sig == syscall.SIGINT {
-            os.Exit(2)
-        } else {
-            os.Exit(1)
-        }
-    }()
 
     scanner := bufio.NewScanner(os.Stdin)
 
@@ -102,7 +70,12 @@ func parseBuildLog(noLogfile bool, logfile string) (
             }
             task := GradleTask { spl[2], spl[3] == "FAILED" }
             tasks = append(tasks, task)
-            taskLog(task, termWidth)
+            if len(tasks) > 1 {
+                // After the first log line, always move back up one line
+                // before printing anew
+                print("\033[A")
+            }
+            taskLog(task)
 
         } else if strings.HasPrefix(line, "e:") {
             // Source code errors have an 'e:' prefix
@@ -123,11 +96,6 @@ func parseBuildLog(noLogfile bool, logfile string) (
     }
     endTime := time.Now().Unix()
     timeTaken = endTime - startTime
-    println()
-
-    // Show cursor again and drop signal handler
-    showCursor()
-    signal.Stop(signalChannel)
 
     return tasks, errors, timeTaken
 }
