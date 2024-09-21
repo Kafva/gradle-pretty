@@ -36,8 +36,8 @@ func taskLog(task GradleTask) {
     println(msg)        // Print with newline
 }
 
-func buildOk(tasks []GradleTask) bool {
-    if len(tasks) == 0 {
+func buildOk(tasks []GradleTask, errors []GradleError) bool {
+    if len(tasks) == 0 || len(errors) > 0 {
         return false
     }
 
@@ -128,7 +128,7 @@ func main() {
 
     tasks, errors, timeTaken := parseBuildLog(*noLogfile, *logfile)
 
-    if buildOk(tasks) {
+    if buildOk(tasks, errors) {
         fmt.Printf("\033[92mBUILD SUCCESSFUL\033[0m in %ds\n", timeTaken)
         os.Exit(0)
 
