@@ -14,9 +14,17 @@ type GradleTask struct {
     Failed bool
 }
 
-type GradleError struct {
+
+type GradleIssue struct {
     Location string
     Desc string
+    IsError bool
+}
+
+type Config struct {
+    NoLogfile *bool
+    Logfile *string
+    NoWarnings *bool
 }
 
 func die(fmtStr string, args... any) {
@@ -36,9 +44,15 @@ func taskLog(task GradleTask) {
     println(msg)        // Print with newline
 }
 
-func buildOk(tasks []GradleTask, errors []GradleError) bool {
-    if len(tasks) == 0 || len(errors) > 0 {
+func buildOk(tasks []GradleTask, issues []GradleIssue) bool {
+    if len(tasks) == 0 {
         return false
+    }
+
+    for _,issue := range issues {
+        if issue.IsError {
+            return false
+        }
     }
 
     for _,task := range tasks {
@@ -50,17 +64,17 @@ func buildOk(tasks []GradleTask, errors []GradleError) bool {
     return true
 }
 
-func parseBuildLog(noLogfile bool, logfile string) (
+func parseBuildLog(cfg *Config) (
     tasks []GradleTask,
-    errors []GradleError,
+    issues []GradleIssue,
     timeTaken int64) {
     var f *os.File
     var err error
-    if !noLogfile {
-        f, err = os.OpenFile(logfile,
+    if !*cfg.NoLogfile {
+        f, err = os.OpenFile(*cfg.Logfile,
                              os.O_TRUNC | os.O_CREATE | os.O_WRONLY, 0644)
         if err != nil {
-            die("Error opening %s: %s\n", logfile, err)
+            die("Error opening %s: %s\n", *cfg.Logfile, err)
         }
         defer f.Close()
     }
@@ -91,27 +105,29 @@ func parseBuildLog(noLogfile bool, logfile string) (
             }
             taskLog(task)
 
-        } else if strings.HasPrefix(line, "e:") {
-            // Source code errors have an 'e:' prefix
-            spl := strings.Split(line, " ")
-            if len(spl) < 2 {
-                continue
+        } else {
+            isError := strings.HasPrefix(line, "e:")
+            if isError || (!*cfg.NoWarnings && strings.HasPrefix(line, "w:")) {
+                // Source code errors and warnings
+                spl := strings.Split(line, " ")
+                if len(spl) < 2 {
+                    continue
+                }
+                location, _ := strings.CutPrefix(strings.TrimSpace(spl[1]), cwd)
+                desc := strings.Join(spl[2:], " ")
+                issue := GradleIssue { location, desc, isError }
+                issues = append(issues, issue)
             }
-            location, _ := strings.CutPrefix(spl[1], cwd)
-            desc := strings.Join(spl[2:], " ")
-            err := GradleError { location, desc }
-            errors = append(errors, err)
-
         }
 
-        if !noLogfile {
+        if !*cfg.NoLogfile {
             f.WriteString(rawline + "\n")
         }
     }
     endTime := time.Now().Unix()
     timeTaken = endTime - startTime
 
-    return tasks, errors, timeTaken
+    return tasks, issues, timeTaken
 }
 
 func main() {
@@ -122,27 +138,33 @@ func main() {
         fmt.Fprintf(os.Stderr, "\nOPTIONS:\n")
         flag.PrintDefaults()
     }
-    logfile := flag.String("l", "build.log", "Path to save complete build log in")
-    noLogfile := flag.Bool("N", false, "Do not save a copy of the complete build log")
+    var cfg = Config{}
+    cfg.Logfile = flag.String("l", "build.log", "Path to save complete build log in")
+    cfg.NoLogfile = flag.Bool("N", false, "Do not save a copy of the complete build log")
+    cfg.NoWarnings = flag.Bool("W", false, "Ignore warnings")
     flag.Parse()
 
-    tasks, errors, timeTaken := parseBuildLog(*noLogfile, *logfile)
+    tasks, issues, timeTaken := parseBuildLog(&cfg)
 
-    if buildOk(tasks, errors) {
+    for _,issue := range issues {
+        if issue.IsError {
+            fmt.Printf("\033[91m\033[0m  %s: %s\n", issue.Location, issue.Desc)
+        } else {
+            fmt.Printf("\033[93m\033[0m  %s: %s\n", issue.Location, issue.Desc)
+        }
+    }
+
+    if buildOk(tasks, issues) {
         fmt.Printf("\033[92mBUILD SUCCESSFUL\033[0m in %ds\n", timeTaken)
         os.Exit(0)
 
     } else {
-        for _,err := range errors {
-            fmt.Printf("%s: %s\n", err.Location, err.Desc)
-        }
-
         fmt.Printf("\033[91mBUILD FAILED\033[0m in %ds\n", timeTaken)
         if len(tasks) == 0 {
             println("No tasks completed")
         }
-        if ! *noLogfile {
-            fmt.Printf("See %s for more information\n", *logfile)
+        if ! *cfg.NoLogfile {
+            fmt.Printf("See %s for more information\n", *cfg.Logfile)
         }
         os.Exit(1)
     }
