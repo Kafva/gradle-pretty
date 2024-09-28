@@ -69,6 +69,7 @@ func parseBuildLog(cfg *Config) (
     issues []GradleIssue,
     timeTaken int64) {
     var f *os.File
+    var cwd string
     var err error
     if !*cfg.NoLogfile {
         f, err = os.OpenFile(*cfg.Logfile,
@@ -78,11 +79,16 @@ func parseBuildLog(cfg *Config) (
         }
         defer f.Close()
     }
-    cwd, err := os.Getwd()
+
+    cwd, err = os.Getwd()
     if err != nil {
         die("Error reading current working directory: %s\n", err)
     }
-    cwd = "file://" + cwd + "/"
+    if target, err := os.Readlink(cwd); err == nil {
+        cwd = "file://" + target + "/"
+    } else {
+        cwd = "file://" + cwd + "/"
+    }
 
     scanner := bufio.NewScanner(os.Stdin)
 
