@@ -102,7 +102,8 @@ func parseBuildLog(cfg *Config) (
             if len(spl) < 4 {
                 continue
             }
-            task := GradleTask { spl[2], spl[3] == "FAILED" }
+            name, _ := strings.CutPrefix(spl[2], ":")
+            task := GradleTask { name, spl[3] == "FAILED" }
             tasks = append(tasks, task)
             if len(tasks) > 1 {
                 // After the first log line, always move back up one line
